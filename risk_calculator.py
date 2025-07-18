@@ -41,9 +41,28 @@ class RiskCalculator:
             if market_data.empty:
                 return 1.0
             
+            # Handle different stock_data formats
+            if isinstance(stock_data, pd.DataFrame):
+                if len(stock_data.columns) == 1:
+                    # Single stock data
+                    stock_prices = stock_data.iloc[:, 0]
+                else:
+                    # Multiple columns, try to find the right one
+                    stock_prices = stock_data.iloc[:, 0]  # Use first column as fallback
+            else:
+                # Series
+                stock_prices = stock_data
+            
             # Calculate returns
-            stock_returns = stock_data.pct_change().dropna()
-            market_returns = market_data['Close'].pct_change().dropna()
+            stock_returns = stock_prices.pct_change().dropna()
+            
+            # Handle market data structure
+            if isinstance(market_data.columns, pd.MultiIndex):
+                market_prices = market_data[('Close', market_symbol)] if ('Close', market_symbol) in market_data.columns else market_data.iloc[:, 0]
+            else:
+                market_prices = market_data['Close'] if 'Close' in market_data.columns else market_data.iloc[:, 0]
+            
+            market_returns = market_prices.pct_change().dropna()
             
             # Align dates
             common_dates = stock_returns.index.intersection(market_returns.index)
@@ -165,6 +184,9 @@ class RiskCalculator:
             for symbol, weight in weights.items():
                 if symbol in stock_returns.columns:
                     portfolio_returns += stock_returns[symbol] * weight
+                elif len(stock_returns.columns) == 1:
+                    # Handle single stock case where column name might be the stock symbol
+                    portfolio_returns += stock_returns.iloc[:, 0] * weight
             
             return portfolio_returns
         
