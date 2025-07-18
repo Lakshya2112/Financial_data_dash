@@ -6,10 +6,14 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import yfinance as yf
 import portfolio_manager as pm
+from risk_calculator import RiskCalculator
 from data_fetcher import DataFetcher
+from alert_system import AlertSystem
+from report_generator import ReportGenerator
+from notification_system import NotificationSystem
 from alpha_vantage_fetcher import AlphaVantageFetcher
+from advanced_analytics import AdvancedAnalytics
 import utils
-
 
 # Configure page
 st.set_page_config(
