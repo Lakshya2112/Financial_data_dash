@@ -83,51 +83,68 @@ class DataFetcher:
                 st.error("No historical data found for the selected symbols")
                 return pd.DataFrame()
             
-            # If only one symbol, yfinance returns a different structure
+            # Debug: Check the data structure
+            st.write(f"Debug - Data columns: {data.columns}")
+            st.write(f"Debug - Data shape: {data.shape}")
+            st.write(f"Debug - Symbols: {symbols}")
+            
+            # Handle single symbol case
             if len(symbols) == 1:
-                if isinstance(data.index, pd.DatetimeIndex) and not data.empty:
-                    # For single symbol, data structure is different
+                symbol = symbols[0]
+                
+                # Check if data has MultiIndex columns
+                if isinstance(data.columns, pd.MultiIndex):
+                    # For single symbol with MultiIndex, columns are like ('Close', 'AAPL')
+                    close_cols = [col for col in data.columns if col[0] == 'Close']
+                    if close_cols:
+                        close_data = data[close_cols[0]]
+                    else:
+                        # Try Adj Close
+                        adj_close_cols = [col for col in data.columns if col[0] == 'Adj Close']
+                        if adj_close_cols:
+                            close_data = data[adj_close_cols[0]]
+                        else:
+                            st.error("No Close or Adj Close data found")
+                            return pd.DataFrame()
+                else:
+                    # Single level columns
                     if 'Close' in data.columns:
                         close_data = data['Close']
+                    elif 'Adj Close' in data.columns:
+                        close_data = data['Adj Close']
                     else:
-                        # Sometimes the column structure is flattened
-                        close_data = data.iloc[:, 3] if data.shape[1] > 3 else data.iloc[:, -1]
-                    
-                    # Ensure we have valid data
-                    if close_data.empty:
+                        st.error("No Close or Adj Close data found")
                         return pd.DataFrame()
-                    
-                    return pd.DataFrame({symbols[0]: close_data})
+                
+                # Create DataFrame with proper column name
+                if isinstance(close_data, pd.Series):
+                    result_df = pd.DataFrame({symbol: close_data})
+                    return result_df
                 else:
+                    st.error("Unexpected data structure")
                     return pd.DataFrame()
             
-            # For multiple symbols, extract closing prices
-            if isinstance(data.columns, pd.MultiIndex):
-                if 'Close' in data.columns.levels[0]:
-                    close_data = data['Close']
-                else:
-                    # Try to find price data in other columns
-                    close_data = data.iloc[:, data.columns.get_level_values(0) == 'Adj Close']
-                    if close_data.empty:
-                        close_data = data.iloc[:, data.columns.get_level_values(0) == 'Close']
+            # Handle multiple symbols case
             else:
-                # Single level columns
-                if 'Close' in data.columns:
-                    close_data = data[['Close']].copy()
-                    close_data.columns = symbols
+                if isinstance(data.columns, pd.MultiIndex):
+                    # Extract Close prices for all symbols
+                    close_data = data['Close'] if 'Close' in data.columns.levels[0] else data['Adj Close']
                 else:
-                    close_data = data.copy()
-            
-            # Handle any missing data
-            if not close_data.empty:
-                close_data = close_data.fillna(method='ffill').fillna(method='bfill')
-                return close_data
-            else:
-                st.error("No closing price data found")
-                return pd.DataFrame()
+                    # This shouldn't happen with multiple symbols, but handle it
+                    close_data = data
+                
+                # Handle any missing data
+                if not close_data.empty:
+                    close_data = close_data.fillna(method='ffill').fillna(method='bfill')
+                    return close_data
+                else:
+                    st.error("No closing price data found")
+                    return pd.DataFrame()
         
         except Exception as e:
             st.error(f"Error fetching historical data: {str(e)}")
+            import traceback
+            st.error(f"Full traceback: {traceback.format_exc()}")
             return pd.DataFrame()
     
     @st.cache_data(ttl=300)
