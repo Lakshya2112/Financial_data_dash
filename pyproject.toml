@@ -4,9 +4,17 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.11"
 dependencies = [
+    "alpha-vantage>=3.0.0",
+    "fpdf2>=2.8.3",
+    "jinja2>=3.1.6",
     "numpy>=2.3.1",
+    "openpyxl>=3.1.5",
     "pandas>=2.3.1",
     "plotly>=6.2.0",
+    "reportlab>=4.4.2",
+    "requests>=2.32.4",
+    "schedule>=1.2.2",
+    "scipy>=1.16.0",
     "streamlit>=1.47.0",
     "yfinance>=0.2.65",
 ]

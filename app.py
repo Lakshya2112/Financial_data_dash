@@ -9,6 +9,10 @@ from portfolio_manager import PortfolioManager
 from risk_calculator import RiskCalculator
 from data_fetcher import DataFetcher
 from alert_system import AlertSystem
+from report_generator import ReportGenerator
+from notification_system import NotificationSystem
+from alpha_vantage_fetcher import AlphaVantageFetcher
+from advanced_analytics import AdvancedAnalytics
 import utils
 
 # Configure page
@@ -28,6 +32,14 @@ if 'risk_calculator' not in st.session_state:
     st.session_state.risk_calculator = RiskCalculator()
 if 'alert_system' not in st.session_state:
     st.session_state.alert_system = AlertSystem()
+if 'report_generator' not in st.session_state:
+    st.session_state.report_generator = ReportGenerator()
+if 'notification_system' not in st.session_state:
+    st.session_state.notification_system = NotificationSystem()
+if 'alpha_vantage' not in st.session_state:
+    st.session_state.alpha_vantage = AlphaVantageFetcher()
+if 'advanced_analytics' not in st.session_state:
+    st.session_state.advanced_analytics = AdvancedAnalytics()
 
 def main():
     st.title("📊 Financial Dashboard")
@@ -40,7 +52,7 @@ def main():
         # Navigation
         page = st.selectbox(
             "Select Dashboard View",
-            ["Portfolio Overview", "Risk Analysis", "Market Data", "Alerts & Reports"]
+            ["Portfolio Overview", "Risk Analysis", "Market Data", "Advanced Analytics", "Alerts & Reports", "Market News & Sentiment"]
         )
         
         st.markdown("---")
@@ -98,8 +110,12 @@ def main():
         show_risk_analysis()
     elif page == "Market Data":
         show_market_data()
+    elif page == "Advanced Analytics":
+        show_advanced_analytics()
     elif page == "Alerts & Reports":
         show_alerts_reports()
+    elif page == "Market News & Sentiment":
+        show_market_news_sentiment()
 
 def show_portfolio_overview():
     st.header("📈 Portfolio Overview")
@@ -522,42 +538,513 @@ def show_alerts_reports():
     
     with col1:
         report_type = st.selectbox("Report Type", ["Portfolio Summary", "Risk Analysis", "Performance Report"])
+        report_format = st.selectbox("Report Format", ["PDF", "Excel", "CSV"])
         
         if st.button("Generate Report"):
             try:
-                if report_type == "Portfolio Summary":
-                    report_data = st.session_state.portfolio_manager.generate_portfolio_report()
-                elif report_type == "Risk Analysis":
-                    symbols = portfolio['Symbol'].tolist()
-                    historical_data = st.session_state.data_fetcher.get_portfolio_history(symbols, "1y")
-                    report_data = st.session_state.risk_calculator.generate_risk_report(
-                        historical_data, portfolio
-                    )
-                else:  # Performance Report
-                    report_data = st.session_state.portfolio_manager.generate_performance_report()
+                # Generate report data
+                report_data = st.session_state.report_generator.generate_portfolio_summary_report(
+                    st.session_state.portfolio_manager,
+                    st.session_state.data_fetcher,
+                    st.session_state.risk_calculator
+                )
                 
-                st.session_state.current_report = report_data
-                st.success("Report generated successfully!")
+                if report_data:
+                    if report_format == "PDF":
+                        pdf_data = st.session_state.report_generator.create_pdf_report(report_data)
+                        if pdf_data:
+                            st.download_button(
+                                label="Download PDF Report",
+                                data=pdf_data,
+                                file_name=f"portfolio_report_{datetime.now().strftime('%Y%m%d')}.pdf",
+                                mime="application/pdf"
+                            )
+                    
+                    elif report_format == "Excel":
+                        excel_data = st.session_state.report_generator.create_excel_report(report_data)
+                        if excel_data:
+                            st.download_button(
+                                label="Download Excel Report",
+                                data=excel_data,
+                                file_name=f"portfolio_report_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            )
+                    
+                    elif report_format == "CSV":
+                        # Create CSV from holdings data
+                        if report_data.get('holdings'):
+                            df = pd.DataFrame(report_data['holdings'])
+                            csv_data = df.to_csv(index=False)
+                            st.download_button(
+                                label="Download CSV Report",
+                                data=csv_data,
+                                file_name=f"portfolio_report_{datetime.now().strftime('%Y%m%d')}.csv",
+                                mime="text/csv"
+                            )
+                    
+                    st.success("Report generated successfully!")
+                else:
+                    st.error("Failed to generate report")
             
             except Exception as e:
                 st.error(f"Error generating report: {str(e)}")
     
     with col2:
-        if hasattr(st.session_state, 'current_report') and st.session_state.current_report is not None:
-            # Display report
-            st.subheader("Generated Report")
+        st.subheader("Scheduled Reports")
+        
+        # Email notification setup
+        with st.expander("Email Notification Setup"):
+            st.write("Configure email settings for automated reports and alerts")
             
-            # Convert to CSV for download
-            csv = st.session_state.current_report.to_csv(index=False)
-            st.download_button(
-                label="Download Report (CSV)",
-                data=csv,
-                file_name=f"financial_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
+            smtp_server = st.text_input("SMTP Server", value="smtp.gmail.com")
+            smtp_port = st.number_input("SMTP Port", value=587, min_value=1, max_value=65535)
+            email_username = st.text_input("Email Username")
+            email_password = st.text_input("Email Password", type="password")
+            
+            if st.button("Configure Email"):
+                success = st.session_state.notification_system.configure_email_settings(
+                    smtp_server, smtp_port, email_username, email_password
+                )
+                if success:
+                    st.success("Email configuration saved!")
+                else:
+                    st.error("Failed to configure email settings")
+            
+            # Test email connection
+            if st.button("Test Email Connection"):
+                success, message = st.session_state.notification_system.test_email_connection()
+                if success:
+                    st.success(message)
+                else:
+                    st.error(message)
+        
+        # Schedule reports
+        with st.expander("Schedule Automated Reports"):
+            recipient_email = st.text_input("Recipient Email")
+            report_frequency = st.selectbox("Report Frequency", ["Daily", "Weekly", "Monthly"])
+            
+            if st.button("Schedule Report"):
+                if recipient_email and "@" in recipient_email:
+                    # Store scheduled report configuration
+                    if 'scheduled_reports' not in st.session_state:
+                        st.session_state.scheduled_reports = []
+                    
+                    scheduled_report = {
+                        'recipient': recipient_email,
+                        'frequency': report_frequency.lower(),
+                        'created_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'active': True
+                    }
+                    
+                    st.session_state.scheduled_reports.append(scheduled_report)
+                    st.success(f"Scheduled {report_frequency.lower()} report for {recipient_email}")
+                else:
+                    st.error("Please enter a valid email address")
+        
+        # Show scheduled reports
+        if 'scheduled_reports' in st.session_state and st.session_state.scheduled_reports:
+            st.subheader("Active Scheduled Reports")
+            for i, report in enumerate(st.session_state.scheduled_reports):
+                col_a, col_b = st.columns([3, 1])
+                with col_a:
+                    st.write(f"**{report['frequency'].title()}** report to {report['recipient']}")
+                    st.write(f"Created: {report['created_date']}")
+                with col_b:
+                    if st.button("Remove", key=f"remove_report_{i}"):
+                        st.session_state.scheduled_reports.pop(i)
+                        st.rerun()
+    
+    st.markdown("---")
+    
+    # Alert management
+    st.subheader("Alert Management")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("**Current Alerts**")
+        alert_report = st.session_state.alert_system.generate_alert_report()
+        if not alert_report.empty:
+            st.dataframe(alert_report, use_container_width=True)
+            
+            # Remove alerts
+            if st.button("Clear All Triggered Alerts"):
+                st.session_state.alert_system.clear_triggered_alerts()
+                st.success("Triggered alerts cleared")
+                st.rerun()
+        else:
+            st.info("No alerts configured")
+    
+    with col2:
+        st.write("**Portfolio Alerts**")
+        try:
+            portfolio_alerts = st.session_state.alert_system.check_portfolio_alerts(portfolio)
+            if portfolio_alerts:
+                for alert in portfolio_alerts:
+                    st.warning(alert)
+            else:
+                st.info("No portfolio alerts")
+        except Exception as e:
+            st.error(f"Error checking portfolio alerts: {str(e)}")
+        
+        # Alert summary
+        alert_summary = st.session_state.alert_system.get_alert_summary()
+        st.metric("Total Alerts", alert_summary['total_alerts'])
+        st.metric("Active Alerts", alert_summary['active_alerts'])
+        st.metric("Triggered Alerts", alert_summary['triggered_alerts'])
+    
+    st.markdown("---")
+    
+    # Quick actions
+    st.subheader("Quick Actions")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("Send Test Email Alert"):
+            # Send test email
+            portfolio_data = st.session_state.data_fetcher.get_portfolio_data(portfolio['Symbol'].tolist())
+            if portfolio_data:
+                portfolio_value, total_cost, total_return = st.session_state.portfolio_manager.calculate_portfolio_metrics(
+                    portfolio, portfolio_data
+                )
+                
+                portfolio_summary = {
+                    'total_value': portfolio_value,
+                    'total_return': total_return,
+                    'return_percentage': (total_return / total_cost * 100) if total_cost > 0 else 0,
+                    'num_holdings': len(portfolio)
+                }
+                
+                # For demo purposes, we'll show a success message
+                st.success("Test email alert would be sent! (Configure email settings to enable)")
+    
+    with col2:
+        if st.button("Generate Market Summary"):
+            try:
+                market_data = st.session_state.report_generator.generate_market_summary_report(
+                    st.session_state.data_fetcher
+                )
+                if market_data:
+                    st.success("Market summary generated!")
+                    
+                    # Display market summary
+                    st.subheader("Market Summary")
+                    for index in market_data['indices']:
+                        st.metric(
+                            index['name'],
+                            f"{index['current_price']:.2f}",
+                            f"{index['change_percent']:+.2f}%"
+                        )
+                else:
+                    st.error("Failed to generate market summary")
+            except Exception as e:
+                st.error(f"Error generating market summary: {str(e)}")
+    
+    with col3:
+        if st.button("Set Default Alerts"):
+            success = st.session_state.alert_system.set_default_portfolio_alerts(portfolio)
+            if success:
+                st.success("Default alerts set for all portfolio stocks")
+                st.rerun()
+            else:
+                st.error("Failed to set default alerts")
+
+def show_advanced_analytics():
+    st.header("📊 Advanced Analytics")
+    
+    portfolio = st.session_state.portfolio_manager.get_portfolio()
+    
+    if portfolio.empty:
+        st.info("No stocks in portfolio. Add some stocks to view advanced analytics.")
+        return
+    
+    # Portfolio performance metrics
+    st.subheader("Enhanced Portfolio Metrics")
+    
+    try:
+        symbols = portfolio['Symbol'].tolist()
+        historical_data = st.session_state.data_fetcher.get_portfolio_history(symbols, "1y")
+        
+        if not historical_data.empty:
+            # Calculate comprehensive performance metrics
+            performance_metrics = st.session_state.advanced_analytics.calculate_portfolio_performance_metrics(
+                portfolio, historical_data
             )
             
-            # Display report preview
-            st.dataframe(st.session_state.current_report, use_container_width=True)
+            if performance_metrics:
+                # Display metrics in columns
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("Alpha", f"{performance_metrics.get('alpha', 0):.2f}%")
+                    st.metric("Beta", f"{performance_metrics.get('beta', 1.0):.2f}")
+                
+                with col2:
+                    st.metric("Sharpe Ratio", f"{performance_metrics.get('sharpe_ratio', 0):.2f}")
+                    st.metric("Sortino Ratio", f"{performance_metrics.get('sortino_ratio', 0):.2f}")
+                
+                with col3:
+                    st.metric("Treynor Ratio", f"{performance_metrics.get('treynor_ratio', 0):.2f}")
+                    st.metric("Information Ratio", f"{performance_metrics.get('information_ratio', 0):.2f}")
+                
+                with col4:
+                    st.metric("Calmar Ratio", f"{performance_metrics.get('calmar_ratio', 0):.2f}")
+                    st.metric("Max Drawdown", f"{performance_metrics.get('max_drawdown', 0)*100:.2f}%")
+                
+                st.markdown("---")
+                
+                # Risk metrics
+                st.subheader("Risk Analysis")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.metric("VaR (95%)", f"{performance_metrics.get('var_95', 0)*100:.2f}%")
+                    st.metric("CVaR (95%)", f"{performance_metrics.get('cvar_95', 0)*100:.2f}%")
+                
+                with col2:
+                    st.metric("VaR (99%)", f"{performance_metrics.get('var_99', 0)*100:.2f}%")
+                    st.metric("Annual Volatility", f"{performance_metrics.get('volatility', 0)*100:.2f}%")
+        
+        # Performance attribution
+        st.subheader("Performance Attribution")
+        
+        attribution_data = st.session_state.advanced_analytics.generate_performance_attribution(
+            portfolio, historical_data
+        )
+        
+        if not attribution_data.empty:
+            st.dataframe(attribution_data, use_container_width=True)
+        
+        # Risk-Return Chart
+        st.subheader("Risk-Return Analysis")
+        
+        risk_return_chart = st.session_state.advanced_analytics.create_risk_return_chart(
+            portfolio, historical_data
+        )
+        
+        if risk_return_chart:
+            st.plotly_chart(risk_return_chart, use_container_width=True)
+        
+        # Correlation Analysis
+        st.subheader("Correlation Analysis")
+        
+        correlation_chart = st.session_state.advanced_analytics.create_correlation_heatmap(historical_data)
+        
+        if correlation_chart:
+            st.plotly_chart(correlation_chart, use_container_width=True)
+        
+        # Portfolio Optimization Suggestions
+        st.subheader("Portfolio Optimization Suggestions")
+        
+        suggestions = st.session_state.advanced_analytics.calculate_portfolio_optimization_suggestions(
+            portfolio, historical_data
+        )
+        
+        if suggestions:
+            for suggestion in suggestions:
+                if suggestion['severity'] == 'High':
+                    st.error(f"🔴 {suggestion['type']}: {suggestion['message']}")
+                elif suggestion['severity'] == 'Medium':
+                    st.warning(f"🟡 {suggestion['type']}: {suggestion['message']}")
+                else:
+                    st.info(f"🟢 {suggestion['type']}: {suggestion['message']}")
+        else:
+            st.success("No optimization suggestions at this time. Your portfolio appears well-balanced.")
+    
+    except Exception as e:
+        st.error(f"Error calculating advanced analytics: {str(e)}")
+    
+    st.markdown("---")
+    
+    # Alpha Vantage Enhanced Data
+    st.subheader("Enhanced Market Data (Alpha Vantage)")
+    
+    selected_symbol = st.selectbox("Select Stock for Detailed Analysis", portfolio['Symbol'].tolist())
+    
+    if selected_symbol:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Company Overview")
+            try:
+                company_overview = st.session_state.alpha_vantage.get_company_overview(selected_symbol)
+                if company_overview:
+                    st.write(f"**Company**: {company_overview.get('Name', 'N/A')}")
+                    st.write(f"**Sector**: {company_overview.get('Sector', 'N/A')}")
+                    st.write(f"**Industry**: {company_overview.get('Industry', 'N/A')}")
+                    st.write(f"**Market Cap**: ${company_overview.get('MarketCapitalization', 0):,.0f}")
+                    st.write(f"**P/E Ratio**: {company_overview.get('PERatio', 'N/A')}")
+                    st.write(f"**Dividend Yield**: {company_overview.get('DividendYield', 'N/A')}")
+                    st.write(f"**Beta**: {company_overview.get('Beta', 'N/A')}")
+                    st.write(f"**52 Week High**: ${company_overview.get('52WeekHigh', 0):.2f}")
+                    st.write(f"**52 Week Low**: ${company_overview.get('52WeekLow', 0):.2f}")
+                else:
+                    st.warning("Company overview data not available")
+            except Exception as e:
+                st.error(f"Error fetching company overview: {str(e)}")
+        
+        with col2:
+            st.subheader("Real-time Quote")
+            try:
+                quote = st.session_state.alpha_vantage.get_stock_quote(selected_symbol)
+                if quote:
+                    st.metric("Current Price", f"${quote['price']:.2f}", f"{quote['change_percent']}%")
+                    st.write(f"**Volume**: {quote['volume']:,}")
+                    st.write(f"**Open**: ${quote['open']:.2f}")
+                    st.write(f"**High**: ${quote['high']:.2f}")
+                    st.write(f"**Low**: ${quote['low']:.2f}")
+                    st.write(f"**Previous Close**: ${quote['previous_close']:.2f}")
+                    st.write(f"**Trading Day**: {quote['latest_trading_day']}")
+                else:
+                    st.warning("Real-time quote not available")
+            except Exception as e:
+                st.error(f"Error fetching real-time quote: {str(e)}")
+
+def show_market_news_sentiment():
+    st.header("📰 Market News & Sentiment")
+    
+    # Market News
+    st.subheader("Latest Market News")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        topics = st.multiselect(
+            "Select News Topics",
+            ["technology", "earnings", "finance", "ipo", "mergers_and_acquisitions", "financial_markets"],
+            default=["technology", "earnings"]
+        )
+    
+    with col2:
+        news_limit = st.slider("Number of Articles", 10, 100, 50)
+    
+    if st.button("Fetch Latest News"):
+        try:
+            topics_str = ",".join(topics) if topics else "technology,earnings"
+            news_data = st.session_state.alpha_vantage.get_market_news(topics_str, limit=news_limit)
+            
+            if news_data:
+                st.session_state.current_news = news_data
+                st.success(f"Fetched {len(news_data)} news articles")
+            else:
+                st.error("Failed to fetch news data")
+        except Exception as e:
+            st.error(f"Error fetching news: {str(e)}")
+    
+    # Display news if available
+    if hasattr(st.session_state, 'current_news') and st.session_state.current_news:
+        st.subheader("News Articles")
+        
+        # Calculate sentiment statistics
+        sentiments = [article['sentiment_score'] for article in st.session_state.current_news]
+        avg_sentiment = np.mean(sentiments) if sentiments else 0
+        positive_count = sum(1 for score in sentiments if score > 0.1)
+        negative_count = sum(1 for score in sentiments if score < -0.1)
+        neutral_count = len(sentiments) - positive_count - negative_count
+        
+        # Display sentiment overview
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Average Sentiment", f"{avg_sentiment:.2f}")
+        
+        with col2:
+            st.metric("Positive Articles", positive_count)
+        
+        with col3:
+            st.metric("Negative Articles", negative_count)
+        
+        with col4:
+            st.metric("Neutral Articles", neutral_count)
+        
+        st.markdown("---")
+        
+        # Display articles
+        for i, article in enumerate(st.session_state.current_news[:20]):  # Show first 20 articles
+            with st.expander(f"📄 {article['title'][:100]}..." if len(article['title']) > 100 else f"📄 {article['title']}"):
+                col1, col2 = st.columns([3, 1])
+                
+                with col1:
+                    st.write(f"**Source**: {article['source']}")
+                    st.write(f"**Published**: {article['published']}")
+                    st.write(f"**Summary**: {article['summary']}")
+                    if article['url']:
+                        st.write(f"**[Read Full Article]({article['url']})**")
+                
+                with col2:
+                    sentiment_color = "🟢" if article['sentiment_score'] > 0.1 else "🔴" if article['sentiment_score'] < -0.1 else "🟡"
+                    st.metric("Sentiment", f"{sentiment_color} {article['sentiment_label']}")
+                    st.metric("Score", f"{article['sentiment_score']:.2f}")
+                    
+                    if article['topics']:
+                        st.write("**Topics**:")
+                        for topic in article['topics'][:3]:  # Show first 3 topics
+                            st.write(f"- {topic}")
+    
+    st.markdown("---")
+    
+    # Sector Performance
+    st.subheader("Sector Performance")
+    
+    if st.button("Fetch Sector Performance"):
+        try:
+            sector_data = st.session_state.alpha_vantage.get_sector_performance()
+            if sector_data:
+                st.session_state.sector_performance = sector_data
+                st.success("Sector performance data fetched")
+            else:
+                st.error("Failed to fetch sector performance data")
+        except Exception as e:
+            st.error(f"Error fetching sector performance: {str(e)}")
+    
+    # Display sector performance
+    if hasattr(st.session_state, 'sector_performance') and st.session_state.sector_performance:
+        time_period = st.selectbox(
+            "Select Time Period",
+            list(st.session_state.sector_performance.keys()),
+            index=0
+        )
+        
+        if time_period in st.session_state.sector_performance:
+            sector_perf = st.session_state.sector_performance[time_period]
+            
+            # Create DataFrame for display
+            sector_df = pd.DataFrame(list(sector_perf.items()), columns=['Sector', 'Performance'])
+            sector_df['Performance'] = sector_df['Performance'].str.replace('%', '').astype(float)
+            sector_df = sector_df.sort_values('Performance', ascending=False)
+            
+            # Display as chart
+            fig = px.bar(
+                sector_df, 
+                x='Performance', 
+                y='Sector', 
+                title=f"Sector Performance - {time_period.replace('Rank ', '').replace(':', '')}",
+                orientation='h'
+            )
+            fig.update_layout(yaxis={'categoryorder': 'total ascending'})
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Display as table
+            st.dataframe(sector_df, use_container_width=True)
+    
+    # API Usage Statistics
+    st.subheader("API Usage Statistics")
+    
+    usage_stats = st.session_state.alpha_vantage.get_api_usage_stats()
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.metric("API Calls Made", usage_stats['calls_made'])
+    
+    with col2:
+        if usage_stats['last_call_time']:
+            last_call = datetime.fromtimestamp(usage_stats['last_call_time']).strftime('%H:%M:%S')
+            st.metric("Last API Call", last_call)
+        else:
+            st.metric("Last API Call", "Never")
 
 if __name__ == "__main__":
     main()

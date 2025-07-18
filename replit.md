@@ -2,7 +2,7 @@
 
 ## Overview
 
-This is a comprehensive financial dashboard application built with Streamlit that provides real-time portfolio management, risk analysis, and market monitoring capabilities. The application integrates with Yahoo Finance API to fetch live market data and offers automated alerting functionality for investment monitoring.
+This is a comprehensive, client-ready financial dashboard application built with Streamlit that provides real-time portfolio management, advanced risk analysis, market monitoring, and professional reporting capabilities. The application integrates with multiple data sources including Yahoo Finance API and Alpha Vantage API to fetch live market data, company fundamentals, and market sentiment. It offers automated alerting, PDF/Excel report generation, and advanced analytics for institutional-grade portfolio management.
 
 ## User Preferences
 
@@ -30,6 +30,7 @@ Preferred communication style: Simple, everyday language.
   - Weighted average price calculation for existing positions
   - DataFrame-based storage using Streamlit session state
   - Date tracking for portfolio additions
+  - Comprehensive portfolio reporting and performance metrics
 
 ### 2. Risk Analysis (`risk_calculator.py`)
 - **Purpose**: Calculates financial risk metrics for portfolio assessment
@@ -37,6 +38,7 @@ Preferred communication style: Simple, everyday language.
   - Volatility calculation (annualized)
   - Beta calculation relative to S&P 500
   - Risk-free rate consideration (2% annual)
+  - Comprehensive risk report generation
 
 ### 3. Data Fetching (`data_fetcher.py`)
 - **Purpose**: Handles all external API interactions with Yahoo Finance
@@ -45,6 +47,7 @@ Preferred communication style: Simple, everyday language.
   - Historical and real-time stock data
   - Error handling for invalid symbols
   - Portfolio-wide data aggregation
+  - Market indices and trending stocks data
 
 ### 4. Alert System (`alert_system.py`)
 - **Purpose**: Manages price and threshold-based alerts
@@ -52,14 +55,62 @@ Preferred communication style: Simple, everyday language.
   - Configurable alert types and thresholds
   - Alert creation and removal
   - Trigger checking against portfolio data
+  - Portfolio-wide alert monitoring
+  - Alert history and management
 
-### 5. Utilities (`utils.py`)
+### 5. Advanced Analytics (`advanced_analytics.py`)
+- **Purpose**: Provides institutional-grade portfolio analytics
+- **Features**:
+  - Alpha and Beta calculations using linear regression
+  - Advanced risk metrics (Sharpe, Sortino, Treynor, Information Ratio)
+  - Performance attribution analysis
+  - Risk-return visualization
+  - Correlation analysis and heatmaps
+  - Portfolio optimization suggestions
+  - Value at Risk (VaR) and Conditional VaR calculations
+
+### 6. Alpha Vantage Integration (`alpha_vantage_fetcher.py`)
+- **Purpose**: Enhanced market data through Alpha Vantage API
+- **Features**:
+  - Real-time stock quotes with detailed metrics
+  - Company fundamental data and financials
+  - Technical indicators (SMA, RSI, MACD, etc.)
+  - Earnings data (annual and quarterly)
+  - Sector performance analysis
+  - Foreign exchange rates
+  - Market news with sentiment analysis
+  - Rate limiting and error handling
+
+### 7. Report Generation (`report_generator.py`)
+- **Purpose**: Professional report generation for clients
+- **Features**:
+  - PDF report generation with ReportLab
+  - Excel report creation with multiple sheets
+  - Portfolio summary and performance reports
+  - Risk analysis reports
+  - Market summary reports
+  - Chart image generation for reports
+  - Automated report scheduling
+
+### 8. Notification System (`notification_system.py`)
+- **Purpose**: Automated email notifications and alerts
+- **Features**:
+  - SMTP email configuration and testing
+  - Portfolio alert notifications
+  - Daily/weekly/monthly scheduled reports
+  - Market summary notifications
+  - Email attachment support (PDF reports)
+  - Notification history and preferences
+
+### 9. Utilities (`utils.py`)
 - **Purpose**: Common formatting and calculation functions
 - **Functions**:
   - Currency formatting with K/M/B suffixes
   - Percentage formatting
   - Risk level determination
   - Date calculations
+  - Correlation matrix calculations
+  - Diversification scoring
 
 ## Data Flow
 
@@ -78,9 +129,15 @@ Preferred communication style: Simple, everyday language.
 - **pandas**: Data manipulation and analysis
 - **numpy**: Numerical computations
 - **plotly**: Interactive visualizations
+- **scipy**: Statistical analysis and advanced calculations
+- **reportlab**: PDF report generation
+- **openpyxl**: Excel file creation and manipulation
+- **requests**: HTTP requests for API calls
+- **alpha-vantage**: Alpha Vantage API integration
 
 ### Data Sources
 - **Yahoo Finance**: Primary data source for stock prices, historical data, and company information
+- **Alpha Vantage**: Enhanced market data, fundamentals, news, and sentiment analysis
 - **S&P 500 Index**: Used as market benchmark for beta calculations
 
 ## Deployment Strategy
