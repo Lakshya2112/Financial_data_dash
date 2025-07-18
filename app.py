@@ -218,46 +218,53 @@ def show_portfolio_overview():
         period = st.selectbox("Select Period", ["1mo", "3mo", "6mo", "1y", "2y"], index=2)
         
         try:
-            portfolio_history = st.session_state.data_fetcher.get_portfolio_history(
-                portfolio['Symbol'].tolist(), period
-            )
-            
-            if not portfolio_history.empty:
-                # Calculate weighted portfolio value over time
-                portfolio_values = []
-                dates = portfolio_history.index
-                
-                for date in dates:
-                    daily_value = 0
-                    for _, stock in portfolio.iterrows():
-                        symbol = stock['Symbol']
-                        shares = stock['Shares']
-                        if symbol in portfolio_history.columns:
-                            price = portfolio_history.loc[date, symbol]
-                            if pd.notna(price):
-                                daily_value += shares * price
-                    portfolio_values.append(daily_value)
-                
-                # Create line chart
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    x=dates,
-                    y=portfolio_values,
-                    mode='lines',
-                    name='Portfolio Value',
-                    line=dict(color='#1f77b4', width=2)
-                ))
-                
-                fig.update_layout(
-                    title="Portfolio Value Over Time",
-                    xaxis_title="Date",
-                    yaxis_title="Portfolio Value ($)",
-                    hovermode='x unified'
+            symbols = portfolio['Symbol'].tolist()
+            if not symbols:
+                st.info("Add stocks to your portfolio to see performance charts")
+            else:
+                portfolio_history = st.session_state.data_fetcher.get_portfolio_history(
+                    symbols, period
                 )
                 
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.warning("Unable to fetch historical data for portfolio chart")
+                if not portfolio_history.empty:
+                    # Calculate weighted portfolio value over time
+                    portfolio_values = []
+                    dates = portfolio_history.index
+                    
+                    for date in dates:
+                        daily_value = 0
+                        for _, stock in portfolio.iterrows():
+                            symbol = stock['Symbol']
+                            shares = stock['Shares']
+                            if symbol in portfolio_history.columns:
+                                price = portfolio_history.loc[date, symbol]
+                                if pd.notna(price):
+                                    daily_value += shares * price
+                        portfolio_values.append(daily_value)
+                
+                    # Create line chart
+                    if portfolio_values and len(portfolio_values) > 0:
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatter(
+                            x=dates,
+                            y=portfolio_values,
+                            mode='lines',
+                            name='Portfolio Value',
+                            line=dict(color='#1f77b4', width=2)
+                        ))
+                        
+                        fig.update_layout(
+                            title="Portfolio Value Over Time",
+                            xaxis_title="Date",
+                            yaxis_title="Portfolio Value ($)",
+                            hovermode='x unified'
+                        )
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.warning("No portfolio data to display")
+                else:
+                    st.warning("Unable to fetch historical data for portfolio chart")
         
         except Exception as e:
             st.error(f"Error fetching historical data: {str(e)}")

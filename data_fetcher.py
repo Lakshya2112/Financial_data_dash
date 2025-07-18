@@ -72,6 +72,10 @@ class DataFetcher:
             if not symbols:
                 return pd.DataFrame()
             
+            # Ensure symbols is a list
+            if isinstance(symbols, str):
+                symbols = [symbols]
+            
             # Download data for all symbols
             data = yf.download(symbols, period=period, progress=False)
             
@@ -81,18 +85,42 @@ class DataFetcher:
             
             # If only one symbol, yfinance returns a different structure
             if len(symbols) == 1:
-                if 'Close' in data.columns:
-                    return pd.DataFrame({symbols[0]: data['Close']})
+                if isinstance(data.index, pd.DatetimeIndex) and not data.empty:
+                    # For single symbol, data structure is different
+                    if 'Close' in data.columns:
+                        close_data = data['Close']
+                    else:
+                        # Sometimes the column structure is flattened
+                        close_data = data.iloc[:, 3] if data.shape[1] > 3 else data.iloc[:, -1]
+                    
+                    # Ensure we have valid data
+                    if close_data.empty:
+                        return pd.DataFrame()
+                    
+                    return pd.DataFrame({symbols[0]: close_data})
                 else:
                     return pd.DataFrame()
             
-            # Extract closing prices
-            if 'Close' in data.columns:
-                close_data = data['Close']
-                
-                # Handle any missing data
+            # For multiple symbols, extract closing prices
+            if isinstance(data.columns, pd.MultiIndex):
+                if 'Close' in data.columns.levels[0]:
+                    close_data = data['Close']
+                else:
+                    # Try to find price data in other columns
+                    close_data = data.iloc[:, data.columns.get_level_values(0) == 'Adj Close']
+                    if close_data.empty:
+                        close_data = data.iloc[:, data.columns.get_level_values(0) == 'Close']
+            else:
+                # Single level columns
+                if 'Close' in data.columns:
+                    close_data = data[['Close']].copy()
+                    close_data.columns = symbols
+                else:
+                    close_data = data.copy()
+            
+            # Handle any missing data
+            if not close_data.empty:
                 close_data = close_data.fillna(method='ffill').fillna(method='bfill')
-                
                 return close_data
             else:
                 st.error("No closing price data found")
