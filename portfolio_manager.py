@@ -2,6 +2,61 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import streamlit as st
+import sqlite3
+import os
+
+DB_PATH = os.path.join(os.path.dirname(__file__), 'portfolio.db')
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS stocks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            name TEXT,
+            quantity REAL,
+            purchase_price REAL,
+            date_added TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+def add_stock(symbol, name, quantity, purchase_price, date_added):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO stocks (symbol, name, quantity, purchase_price, date_added)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (symbol, name, quantity, purchase_price, date_added))
+    conn.commit()
+    conn.close()
+
+def get_all_stocks():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT id, symbol, name, quantity, purchase_price, date_added FROM stocks')
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+def remove_stock(stock_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('DELETE FROM stocks WHERE id = ?', (stock_id,))
+    conn.commit()
+    conn.close()
+
+def sync_db_to_session():
+    import pandas as pd
+    rows = get_all_stocks()
+    df = pd.DataFrame(rows, columns=["ID", "Symbol", "Name", "Shares", "Purchase_Price", "Date_Added"])
+    # Only keep relevant columns for session state
+    if not df.empty:
+        st.session_state.portfolio = df[["Symbol", "Shares", "Purchase_Price", "Date_Added"]].copy()
+    else:
+        st.session_state.portfolio = pd.DataFrame(columns=["Symbol", "Shares", "Purchase_Price", "Date_Added"])
 
 class PortfolioManager:
     def __init__(self):

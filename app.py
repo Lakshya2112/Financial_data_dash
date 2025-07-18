@@ -5,7 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import yfinance as yf
-from portfolio_manager import PortfolioManager
+import portfolio_manager as pm
 from risk_calculator import RiskCalculator
 from data_fetcher import DataFetcher
 from alert_system import AlertSystem
@@ -24,8 +24,9 @@ st.set_page_config(
 )
 
 # Initialize session state
-if 'portfolio_manager' not in st.session_state:
-    st.session_state.portfolio_manager = PortfolioManager()
+# Remove PortfolioManager session state initialization
+# if 'portfolio_manager' not in st.session_state:
+#     st.session_state.portfolio_manager = PortfolioManager()
 if 'data_fetcher' not in st.session_state:
     st.session_state.data_fetcher = DataFetcher()
 if 'risk_calculator' not in st.session_state:
@@ -41,6 +42,10 @@ if 'alpha_vantage' not in st.session_state:
 if 'advanced_analytics' not in st.session_state:
     st.session_state.advanced_analytics = AdvancedAnalytics()
 
+# Initialize database at app start
+pm.init_db()
+pm.sync_db_to_session()
+
 def main():
     st.title("📊 Financial Dashboard")
     st.markdown("---")
@@ -52,48 +57,46 @@ def main():
         # Navigation
         page = st.selectbox(
             "Select Dashboard View",
-            ["Portfolio Overview", "Risk Analysis", "Market Data", "Advanced Analytics", "Alerts & Reports", "Market News & Sentiment"]
+            ["Portfolio Overview", "Market Data", "Market News & Sentiment"]
         )
         
         st.markdown("---")
         
         # Portfolio Management
         st.header("Portfolio Management")
-        
         # Add stock to portfolio
         with st.expander("Add Stock to Portfolio"):
             symbol = st.text_input("Stock Symbol (e.g., AAPL, GOOGL)")
             shares = st.number_input("Number of Shares", min_value=0.0, step=0.1)
             purchase_price = st.number_input("Purchase Price ($)", min_value=0.0, step=0.01)
-            
             if st.button("Add to Portfolio"):
                 if symbol and shares > 0 and purchase_price > 0:
                     try:
-                        success = st.session_state.portfolio_manager.add_stock(
-                            symbol.upper(), shares, purchase_price
-                        )
-                        if success:
-                            st.success(f"Added {shares} shares of {symbol.upper()} to portfolio")
-                            st.rerun()
-                        else:
-                            st.error("Failed to add stock to portfolio")
+                        pm.add_stock(symbol.upper(), None, shares, purchase_price, str(datetime.now()))
+                        pm.sync_db_to_session()
+                        st.success(f"Added {shares} shares of {symbol.upper()} to portfolio")
+                        st.rerun()
                     except Exception as e:
                         st.error(f"Error adding stock: {str(e)}")
                 else:
                     st.error("Please fill in all fields with valid values")
-        
-        # Current portfolio
-        portfolio = st.session_state.portfolio_manager.get_portfolio()
-        if not portfolio.empty:
-            st.subheader("Current Portfolio")
-            for _, stock in portfolio.iterrows():
+        # Current portfolio (from DB)
+        stocks = pm.get_all_stocks()
+        import pandas as pd
+        if stocks:
+            st.subheader("Current Portfolio (DB)")
+            df = pd.DataFrame(stocks, columns=pd.Index(["ID", "Symbol", "Name", "Shares", "Purchase Price", "Date Added"]))
+            for _, row in df.iterrows():
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    st.write(f"**{stock['Symbol']}**: {stock['Shares']} shares")
+                    st.write(f"**{row['Symbol']}**: {row['Shares']} shares @ ${row['Purchase Price']}")
                 with col2:
-                    if st.button("🗑️", key=f"remove_{stock['Symbol']}"):
-                        st.session_state.portfolio_manager.remove_stock(stock['Symbol'])
+                    if st.button("🗑️", key=f"remove_db_{row['ID']}"):
+                        pm.remove_stock(row['ID'])
+                        pm.sync_db_to_session()
                         st.rerun()
+        else:
+            st.info("No stocks in portfolio. Add some stocks using the sidebar to get started.")
         
         st.markdown("---")
         
@@ -103,24 +106,36 @@ def main():
             st.success("Data refreshed!")
             st.rerun()
     
+    # Always set dark mode theme
+    from pathlib import Path
+    theme_config = {
+        "theme": {
+            "base": "dark",
+            "primaryColor": "#1f77b4",
+            "backgroundColor": "#0e1117",
+            "secondaryBackgroundColor": "#262730",
+            "textColor": "#fafafa"
+        }
+    }
+    config_dir = Path(".streamlit")
+    config_dir.mkdir(exist_ok=True)
+    config_path = config_dir / "config.toml"
+    import toml
+    with open(config_path, "w") as f:
+        toml.dump(theme_config, f)
+
     # Main content area
     if page == "Portfolio Overview":
         show_portfolio_overview()
-    elif page == "Risk Analysis":
-        show_risk_analysis()
     elif page == "Market Data":
         show_market_data()
-    elif page == "Advanced Analytics":
-        show_advanced_analytics()
-    elif page == "Alerts & Reports":
-        show_alerts_reports()
     elif page == "Market News & Sentiment":
         show_market_news_sentiment()
 
 def show_portfolio_overview():
     st.header("📈 Portfolio Overview")
     
-    portfolio = st.session_state.portfolio_manager.get_portfolio()
+    portfolio = st.session_state.portfolio
     
     if portfolio.empty:
         st.info("No stocks in portfolio. Add some stocks using the sidebar to get started.")
@@ -131,7 +146,7 @@ def show_portfolio_overview():
         portfolio_data = st.session_state.data_fetcher.get_portfolio_data(portfolio['Symbol'].tolist())
         
         # Calculate portfolio metrics
-        portfolio_value, total_cost, portfolio_return = st.session_state.portfolio_manager.calculate_portfolio_metrics(
+        portfolio_value, total_cost, portfolio_return = pm.PortfolioManager().calculate_portfolio_metrics(
             portfolio, portfolio_data
         )
         
@@ -272,120 +287,6 @@ def show_portfolio_overview():
     except Exception as e:
         st.error(f"Error fetching portfolio data: {str(e)}")
 
-def show_risk_analysis():
-    st.header("⚠️ Risk Analysis")
-    
-    portfolio = st.session_state.portfolio_manager.get_portfolio()
-    
-    if portfolio.empty:
-        st.info("No stocks in portfolio. Add some stocks to perform risk analysis.")
-        return
-    
-    try:
-        # Get historical data for risk calculations
-        symbols = portfolio['Symbol'].tolist()
-        historical_data = st.session_state.data_fetcher.get_portfolio_history(symbols, "1y")
-        
-        if historical_data.empty:
-            st.warning("Unable to fetch historical data for risk analysis")
-            return
-        
-        # Calculate risk metrics
-        risk_metrics = st.session_state.risk_calculator.calculate_portfolio_risk(
-            historical_data, portfolio
-        )
-        
-        # Display risk metrics
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric("Portfolio Volatility", f"{risk_metrics['volatility']:.2f}%")
-        
-        with col2:
-            st.metric("Sharpe Ratio", f"{risk_metrics['sharpe_ratio']:.2f}")
-        
-        with col3:
-            st.metric("Max Drawdown", f"{risk_metrics['max_drawdown']:.2f}%")
-        
-        st.markdown("---")
-        
-        # Individual stock risk metrics
-        st.subheader("Individual Stock Risk Metrics")
-        
-        risk_data = []
-        for symbol in symbols:
-            if symbol in historical_data.columns:
-                stock_data = historical_data[symbol].dropna()
-                if len(stock_data) > 30:  # Need sufficient data
-                    volatility = st.session_state.risk_calculator.calculate_volatility(stock_data)
-                    beta = st.session_state.risk_calculator.calculate_beta(stock_data)
-                    
-                    risk_data.append({
-                        'Symbol': symbol,
-                        'Volatility (%)': f"{volatility:.2f}",
-                        'Beta': f"{beta:.2f}",
-                        'Risk Level': utils.get_risk_level(volatility, beta)
-                    })
-        
-        if risk_data:
-            df = pd.DataFrame(risk_data)
-            st.dataframe(df, use_container_width=True)
-        
-        # Risk-Return scatter plot
-        st.subheader("Risk-Return Analysis")
-        
-        returns_data = []
-        volatility_data = []
-        symbols_data = []
-        
-        for symbol in symbols:
-            if symbol in historical_data.columns:
-                stock_data = historical_data[symbol].dropna()
-                if len(stock_data) > 30:
-                    returns = stock_data.pct_change().dropna()
-                    annual_return = (returns.mean() * 252) * 100
-                    volatility = st.session_state.risk_calculator.calculate_volatility(stock_data)
-                    
-                    returns_data.append(annual_return)
-                    volatility_data.append(volatility)
-                    symbols_data.append(symbol)
-        
-        if returns_data and volatility_data:
-            fig = px.scatter(
-                x=volatility_data,
-                y=returns_data,
-                text=symbols_data,
-                title="Risk vs Return",
-                labels={'x': 'Volatility (%)', 'y': 'Annual Return (%)'}
-            )
-            fig.update_traces(textposition="top center")
-            st.plotly_chart(fig, use_container_width=True)
-        
-        # Value at Risk (VaR) calculation
-        st.subheader("Value at Risk (VaR)")
-        confidence_level = st.slider("Confidence Level (%)", 90, 99, 95)
-        
-        portfolio_data = st.session_state.data_fetcher.get_portfolio_data(symbols)
-        if portfolio_data:
-            portfolio_value = sum(
-                portfolio[portfolio['Symbol'] == symbol]['Shares'].iloc[0] * 
-                portfolio_data[symbol]['current_price']
-                for symbol in symbols if symbol in portfolio_data
-            )
-            
-            var_1d = st.session_state.risk_calculator.calculate_var(
-                historical_data, portfolio, confidence_level, portfolio_value
-            )
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric(f"1-Day VaR ({confidence_level}%)", f"${var_1d:.2f}")
-            with col2:
-                st.metric(f"1-Week VaR ({confidence_level}%)", f"${var_1d * np.sqrt(5):.2f}")
-    
-    except Exception as e:
-        st.error(f"Error calculating risk metrics: {str(e)}")
-
 def show_market_data():
     st.header("📊 Market Data")
     
@@ -499,416 +400,6 @@ def show_market_data():
             except Exception as e:
                 st.error(f"Error analyzing stock: {str(e)}")
 
-def show_alerts_reports():
-    st.header("🚨 Alerts & Reports")
-    
-    # Alert configuration
-    st.subheader("Alert Configuration")
-    
-    portfolio = st.session_state.portfolio_manager.get_portfolio()
-    
-    if portfolio.empty:
-        st.info("No stocks in portfolio. Add some stocks to configure alerts.")
-        return
-    
-    # Configure alerts
-    with st.expander("Configure Price Alerts"):
-        symbol = st.selectbox("Select Stock", portfolio['Symbol'].tolist())
-        alert_type = st.selectbox("Alert Type", ["Price Drop", "Price Rise", "Volume Spike"])
-        threshold = st.number_input("Threshold (%)", min_value=0.1, max_value=50.0, value=5.0, step=0.1)
-        
-        if st.button("Set Alert"):
-            st.session_state.alert_system.add_alert(symbol, alert_type, threshold)
-            st.success(f"Alert set for {symbol}: {alert_type} at {threshold}%")
-    
-    # Check for alerts
-    st.subheader("Active Alerts")
-    try:
-        alerts = st.session_state.alert_system.check_alerts(portfolio)
-        
-        if alerts:
-            for alert in alerts:
-                alert_type = "🔴" if "Drop" in alert else "🟢"
-                st.warning(f"{alert_type} {alert}")
-        else:
-            st.info("No active alerts")
-    
-    except Exception as e:
-        st.error(f"Error checking alerts: {str(e)}")
-    
-    st.markdown("---")
-    
-    # Report generation
-    st.subheader("Report Generation")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        report_type = st.selectbox("Report Type", ["Portfolio Summary", "Risk Analysis", "Performance Report"])
-        report_format = st.selectbox("Report Format", ["PDF", "Excel", "CSV"])
-        
-        if st.button("Generate Report"):
-            try:
-                # Generate report data
-                report_data = st.session_state.report_generator.generate_portfolio_summary_report(
-                    st.session_state.portfolio_manager,
-                    st.session_state.data_fetcher,
-                    st.session_state.risk_calculator
-                )
-                
-                if report_data:
-                    if report_format == "PDF":
-                        pdf_data = st.session_state.report_generator.create_pdf_report(report_data)
-                        if pdf_data:
-                            st.download_button(
-                                label="Download PDF Report",
-                                data=pdf_data,
-                                file_name=f"portfolio_report_{datetime.now().strftime('%Y%m%d')}.pdf",
-                                mime="application/pdf"
-                            )
-                    
-                    elif report_format == "Excel":
-                        excel_data = st.session_state.report_generator.create_excel_report(report_data)
-                        if excel_data:
-                            st.download_button(
-                                label="Download Excel Report",
-                                data=excel_data,
-                                file_name=f"portfolio_report_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            )
-                    
-                    elif report_format == "CSV":
-                        # Create CSV from holdings data
-                        if report_data.get('holdings'):
-                            df = pd.DataFrame(report_data['holdings'])
-                            csv_data = df.to_csv(index=False)
-                            st.download_button(
-                                label="Download CSV Report",
-                                data=csv_data,
-                                file_name=f"portfolio_report_{datetime.now().strftime('%Y%m%d')}.csv",
-                                mime="text/csv"
-                            )
-                    
-                    st.success("Report generated successfully!")
-                else:
-                    st.error("Failed to generate report")
-            
-            except Exception as e:
-                st.error(f"Error generating report: {str(e)}")
-    
-    with col2:
-        st.subheader("Scheduled Reports")
-        
-        # Email notification setup
-        with st.expander("Email Notification Setup"):
-            st.write("Configure email settings for automated reports and alerts")
-            
-            smtp_server = st.text_input("SMTP Server", value="smtp.gmail.com")
-            smtp_port = st.number_input("SMTP Port", value=587, min_value=1, max_value=65535)
-            email_username = st.text_input("Email Username")
-            email_password = st.text_input("Email Password", type="password")
-            
-            if st.button("Configure Email"):
-                success = st.session_state.notification_system.configure_email_settings(
-                    smtp_server, smtp_port, email_username, email_password
-                )
-                if success:
-                    st.success("Email configuration saved!")
-                else:
-                    st.error("Failed to configure email settings")
-            
-            # Test email connection
-            if st.button("Test Email Connection"):
-                success, message = st.session_state.notification_system.test_email_connection()
-                if success:
-                    st.success(message)
-                else:
-                    st.error(message)
-        
-        # Schedule reports
-        with st.expander("Schedule Automated Reports"):
-            recipient_email = st.text_input("Recipient Email")
-            report_frequency = st.selectbox("Report Frequency", ["Daily", "Weekly", "Monthly"])
-            
-            if st.button("Schedule Report"):
-                if recipient_email and "@" in recipient_email:
-                    # Store scheduled report configuration
-                    if 'scheduled_reports' not in st.session_state:
-                        st.session_state.scheduled_reports = []
-                    
-                    scheduled_report = {
-                        'recipient': recipient_email,
-                        'frequency': report_frequency.lower(),
-                        'created_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        'active': True
-                    }
-                    
-                    st.session_state.scheduled_reports.append(scheduled_report)
-                    st.success(f"Scheduled {report_frequency.lower()} report for {recipient_email}")
-                else:
-                    st.error("Please enter a valid email address")
-        
-        # Show scheduled reports
-        if 'scheduled_reports' in st.session_state and st.session_state.scheduled_reports:
-            st.subheader("Active Scheduled Reports")
-            for i, report in enumerate(st.session_state.scheduled_reports):
-                col_a, col_b = st.columns([3, 1])
-                with col_a:
-                    st.write(f"**{report['frequency'].title()}** report to {report['recipient']}")
-                    st.write(f"Created: {report['created_date']}")
-                with col_b:
-                    if st.button("Remove", key=f"remove_report_{i}"):
-                        st.session_state.scheduled_reports.pop(i)
-                        st.rerun()
-    
-    st.markdown("---")
-    
-    # Alert management
-    st.subheader("Alert Management")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.write("**Current Alerts**")
-        alert_report = st.session_state.alert_system.generate_alert_report()
-        if not alert_report.empty:
-            st.dataframe(alert_report, use_container_width=True)
-            
-            # Remove alerts
-            if st.button("Clear All Triggered Alerts"):
-                st.session_state.alert_system.clear_triggered_alerts()
-                st.success("Triggered alerts cleared")
-                st.rerun()
-        else:
-            st.info("No alerts configured")
-    
-    with col2:
-        st.write("**Portfolio Alerts**")
-        try:
-            portfolio_alerts = st.session_state.alert_system.check_portfolio_alerts(portfolio)
-            if portfolio_alerts:
-                for alert in portfolio_alerts:
-                    st.warning(alert)
-            else:
-                st.info("No portfolio alerts")
-        except Exception as e:
-            st.error(f"Error checking portfolio alerts: {str(e)}")
-        
-        # Alert summary
-        alert_summary = st.session_state.alert_system.get_alert_summary()
-        st.metric("Total Alerts", alert_summary['total_alerts'])
-        st.metric("Active Alerts", alert_summary['active_alerts'])
-        st.metric("Triggered Alerts", alert_summary['triggered_alerts'])
-    
-    st.markdown("---")
-    
-    # Quick actions
-    st.subheader("Quick Actions")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("Send Test Email Alert"):
-            # Send test email
-            portfolio_data = st.session_state.data_fetcher.get_portfolio_data(portfolio['Symbol'].tolist())
-            if portfolio_data:
-                portfolio_value, total_cost, total_return = st.session_state.portfolio_manager.calculate_portfolio_metrics(
-                    portfolio, portfolio_data
-                )
-                
-                portfolio_summary = {
-                    'total_value': portfolio_value,
-                    'total_return': total_return,
-                    'return_percentage': (total_return / total_cost * 100) if total_cost > 0 else 0,
-                    'num_holdings': len(portfolio)
-                }
-                
-                # For demo purposes, we'll show a success message
-                st.success("Test email alert would be sent! (Configure email settings to enable)")
-    
-    with col2:
-        if st.button("Generate Market Summary"):
-            try:
-                market_data = st.session_state.report_generator.generate_market_summary_report(
-                    st.session_state.data_fetcher
-                )
-                if market_data:
-                    st.success("Market summary generated!")
-                    
-                    # Display market summary
-                    st.subheader("Market Summary")
-                    for index in market_data['indices']:
-                        st.metric(
-                            index['name'],
-                            f"{index['current_price']:.2f}",
-                            f"{index['change_percent']:+.2f}%"
-                        )
-                else:
-                    st.error("Failed to generate market summary")
-            except Exception as e:
-                st.error(f"Error generating market summary: {str(e)}")
-    
-    with col3:
-        if st.button("Set Default Alerts"):
-            success = st.session_state.alert_system.set_default_portfolio_alerts(portfolio)
-            if success:
-                st.success("Default alerts set for all portfolio stocks")
-                st.rerun()
-            else:
-                st.error("Failed to set default alerts")
-
-def show_advanced_analytics():
-    st.header("📊 Advanced Analytics")
-    
-    portfolio = st.session_state.portfolio_manager.get_portfolio()
-    
-    if portfolio.empty:
-        st.info("No stocks in portfolio. Add some stocks to view advanced analytics.")
-        return
-    
-    # Portfolio performance metrics
-    st.subheader("Enhanced Portfolio Metrics")
-    
-    try:
-        symbols = portfolio['Symbol'].tolist()
-        historical_data = st.session_state.data_fetcher.get_portfolio_history(symbols, "1y")
-        
-        if not historical_data.empty:
-            # Calculate comprehensive performance metrics
-            performance_metrics = st.session_state.advanced_analytics.calculate_portfolio_performance_metrics(
-                portfolio, historical_data
-            )
-            
-            if performance_metrics:
-                # Display metrics in columns
-                col1, col2, col3, col4 = st.columns(4)
-                
-                with col1:
-                    st.metric("Alpha", f"{performance_metrics.get('alpha', 0):.2f}%")
-                    st.metric("Beta", f"{performance_metrics.get('beta', 1.0):.2f}")
-                
-                with col2:
-                    st.metric("Sharpe Ratio", f"{performance_metrics.get('sharpe_ratio', 0):.2f}")
-                    st.metric("Sortino Ratio", f"{performance_metrics.get('sortino_ratio', 0):.2f}")
-                
-                with col3:
-                    st.metric("Treynor Ratio", f"{performance_metrics.get('treynor_ratio', 0):.2f}")
-                    st.metric("Information Ratio", f"{performance_metrics.get('information_ratio', 0):.2f}")
-                
-                with col4:
-                    st.metric("Calmar Ratio", f"{performance_metrics.get('calmar_ratio', 0):.2f}")
-                    st.metric("Max Drawdown", f"{performance_metrics.get('max_drawdown', 0)*100:.2f}%")
-                
-                st.markdown("---")
-                
-                # Risk metrics
-                st.subheader("Risk Analysis")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.metric("VaR (95%)", f"{performance_metrics.get('var_95', 0)*100:.2f}%")
-                    st.metric("CVaR (95%)", f"{performance_metrics.get('cvar_95', 0)*100:.2f}%")
-                
-                with col2:
-                    st.metric("VaR (99%)", f"{performance_metrics.get('var_99', 0)*100:.2f}%")
-                    st.metric("Annual Volatility", f"{performance_metrics.get('volatility', 0)*100:.2f}%")
-        
-        # Performance attribution
-        st.subheader("Performance Attribution")
-        
-        attribution_data = st.session_state.advanced_analytics.generate_performance_attribution(
-            portfolio, historical_data
-        )
-        
-        if not attribution_data.empty:
-            st.dataframe(attribution_data, use_container_width=True)
-        
-        # Risk-Return Chart
-        st.subheader("Risk-Return Analysis")
-        
-        risk_return_chart = st.session_state.advanced_analytics.create_risk_return_chart(
-            portfolio, historical_data
-        )
-        
-        if risk_return_chart:
-            st.plotly_chart(risk_return_chart, use_container_width=True)
-        
-        # Correlation Analysis
-        st.subheader("Correlation Analysis")
-        
-        correlation_chart = st.session_state.advanced_analytics.create_correlation_heatmap(historical_data)
-        
-        if correlation_chart:
-            st.plotly_chart(correlation_chart, use_container_width=True)
-        
-        # Portfolio Optimization Suggestions
-        st.subheader("Portfolio Optimization Suggestions")
-        
-        suggestions = st.session_state.advanced_analytics.calculate_portfolio_optimization_suggestions(
-            portfolio, historical_data
-        )
-        
-        if suggestions:
-            for suggestion in suggestions:
-                if suggestion['severity'] == 'High':
-                    st.error(f"🔴 {suggestion['type']}: {suggestion['message']}")
-                elif suggestion['severity'] == 'Medium':
-                    st.warning(f"🟡 {suggestion['type']}: {suggestion['message']}")
-                else:
-                    st.info(f"🟢 {suggestion['type']}: {suggestion['message']}")
-        else:
-            st.success("No optimization suggestions at this time. Your portfolio appears well-balanced.")
-    
-    except Exception as e:
-        st.error(f"Error calculating advanced analytics: {str(e)}")
-    
-    st.markdown("---")
-    
-    # Alpha Vantage Enhanced Data
-    st.subheader("Enhanced Market Data (Alpha Vantage)")
-    
-    selected_symbol = st.selectbox("Select Stock for Detailed Analysis", portfolio['Symbol'].tolist())
-    
-    if selected_symbol:
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("Company Overview")
-            try:
-                company_overview = st.session_state.alpha_vantage.get_company_overview(selected_symbol)
-                if company_overview:
-                    st.write(f"**Company**: {company_overview.get('Name', 'N/A')}")
-                    st.write(f"**Sector**: {company_overview.get('Sector', 'N/A')}")
-                    st.write(f"**Industry**: {company_overview.get('Industry', 'N/A')}")
-                    st.write(f"**Market Cap**: ${company_overview.get('MarketCapitalization', 0):,.0f}")
-                    st.write(f"**P/E Ratio**: {company_overview.get('PERatio', 'N/A')}")
-                    st.write(f"**Dividend Yield**: {company_overview.get('DividendYield', 'N/A')}")
-                    st.write(f"**Beta**: {company_overview.get('Beta', 'N/A')}")
-                    st.write(f"**52 Week High**: ${company_overview.get('52WeekHigh', 0):.2f}")
-                    st.write(f"**52 Week Low**: ${company_overview.get('52WeekLow', 0):.2f}")
-                else:
-                    st.warning("Company overview data not available")
-            except Exception as e:
-                st.error(f"Error fetching company overview: {str(e)}")
-        
-        with col2:
-            st.subheader("Real-time Quote")
-            try:
-                quote = st.session_state.alpha_vantage.get_stock_quote(selected_symbol)
-                if quote:
-                    st.metric("Current Price", f"${quote['price']:.2f}", f"{quote['change_percent']}%")
-                    st.write(f"**Volume**: {quote['volume']:,}")
-                    st.write(f"**Open**: ${quote['open']:.2f}")
-                    st.write(f"**High**: ${quote['high']:.2f}")
-                    st.write(f"**Low**: ${quote['low']:.2f}")
-                    st.write(f"**Previous Close**: ${quote['previous_close']:.2f}")
-                    st.write(f"**Trading Day**: {quote['latest_trading_day']}")
-                else:
-                    st.warning("Real-time quote not available")
-            except Exception as e:
-                st.error(f"Error fetching real-time quote: {str(e)}")
-
 def show_market_news_sentiment():
     st.header("📰 Market News & Sentiment")
     
@@ -1018,8 +509,10 @@ def show_market_news_sentiment():
             sector_perf = st.session_state.sector_performance[time_period]
             
             # Create DataFrame for display
-            sector_df = pd.DataFrame(list(sector_perf.items()), columns=['Sector', 'Performance'])
-            sector_df['Performance'] = sector_df['Performance'].str.replace('%', '').astype(float)
+            sector_df = pd.DataFrame(list(sector_perf.items()), columns=pd.Index(['Sector', 'Performance']))
+            if sector_df['Performance'].dtype == object:
+                sector_df['Performance'] = sector_df['Performance'].fillna('0')
+                sector_df['Performance'] = sector_df['Performance'].apply(lambda x: str(x).replace('%', '') if x is not None else '0').astype(float)
             sector_df = sector_df.sort_values('Performance', ascending=False)
             
             # Display as chart

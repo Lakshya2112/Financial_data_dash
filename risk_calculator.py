@@ -11,11 +11,11 @@ class RiskCalculator:
     def calculate_volatility(self, price_data):
         """Calculate annualized volatility"""
         try:
-            if len(price_data) < 2:
+            if price_data is None or len(price_data) < 2:
                 return 0
             
             returns = price_data.pct_change().dropna()
-            if len(returns) == 0:
+            if returns is None or len(returns) == 0:
                 return 0
             
             # Annualize volatility (252 trading days)
@@ -29,7 +29,7 @@ class RiskCalculator:
     def calculate_beta(self, stock_data, market_symbol="^GSPC"):
         """Calculate beta relative to market (S&P 500)"""
         try:
-            if len(stock_data) < 30:
+            if stock_data is None or len(stock_data) < 30:
                 return 1.0  # Default beta
             
             # Get market data for the same period
@@ -38,7 +38,7 @@ class RiskCalculator:
             
             market_data = yf.download(market_symbol, start=start_date, end=end_date, progress=False)
             
-            if market_data.empty:
+            if market_data is None or market_data.empty:
                 return 1.0
             
             # Handle different stock_data formats
@@ -92,7 +92,7 @@ class RiskCalculator:
             if risk_free_rate is None:
                 risk_free_rate = self.risk_free_rate
             
-            if len(returns) == 0:
+            if returns is None or len(returns) == 0:
                 return 0
             
             # Annualize returns
@@ -112,7 +112,7 @@ class RiskCalculator:
     def calculate_max_drawdown(self, price_data):
         """Calculate maximum drawdown"""
         try:
-            if len(price_data) < 2:
+            if price_data is None or len(price_data) < 2:
                 return 0
             
             # Calculate running maximum
@@ -132,13 +132,13 @@ class RiskCalculator:
     def calculate_var(self, historical_data, portfolio, confidence_level=95, portfolio_value=None):
         """Calculate Value at Risk (VaR)"""
         try:
-            if historical_data.empty or portfolio.empty:
+            if historical_data is None or historical_data.empty or portfolio is None or portfolio.empty:
                 return 0
             
             # Calculate portfolio returns
             portfolio_returns = self.calculate_portfolio_returns(historical_data, portfolio)
             
-            if len(portfolio_returns) == 0:
+            if portfolio_returns is None or len(portfolio_returns) == 0:
                 return 0
             
             # Calculate VaR using historical simulation
@@ -159,7 +159,7 @@ class RiskCalculator:
     def calculate_portfolio_returns(self, historical_data, portfolio):
         """Calculate historical portfolio returns"""
         try:
-            if historical_data.empty or portfolio.empty:
+            if historical_data is None or historical_data.empty or portfolio is None or portfolio.empty:
                 return pd.Series()
             
             # Get portfolio weights
@@ -176,17 +176,18 @@ class RiskCalculator:
                 return pd.Series()
             
             # Calculate returns for each stock
-            stock_returns = historical_data.pct_change().dropna()
+            stock_returns = historical_data.pct_change().dropna() if historical_data is not None else None
             
             # Calculate weighted portfolio returns
-            portfolio_returns = pd.Series(0, index=stock_returns.index)
+            portfolio_returns = pd.Series(0, index=stock_returns.index) if stock_returns is not None else pd.Series(0, index=[])
             
-            for symbol, weight in weights.items():
-                if symbol in stock_returns.columns:
-                    portfolio_returns += stock_returns[symbol] * weight
-                elif len(stock_returns.columns) == 1:
-                    # Handle single stock case where column name might be the stock symbol
-                    portfolio_returns += stock_returns.iloc[:, 0] * weight
+            if stock_returns is not None and hasattr(stock_returns, 'columns'):
+                for symbol, weight in weights.items():
+                    if symbol in stock_returns.columns:
+                        portfolio_returns += stock_returns[symbol] * weight
+                    elif len(stock_returns.columns) == 1:
+                        # Handle single stock case where column name might be the stock symbol
+                        portfolio_returns += stock_returns.iloc[:, 0] * weight
             
             return portfolio_returns
         
@@ -197,7 +198,7 @@ class RiskCalculator:
     def calculate_portfolio_risk(self, historical_data, portfolio):
         """Calculate comprehensive portfolio risk metrics"""
         try:
-            if historical_data.empty or portfolio.empty:
+            if historical_data is None or historical_data.empty or portfolio is None or portfolio.empty:
                 return {
                     'volatility': 0,
                     'sharpe_ratio': 0,
@@ -208,7 +209,7 @@ class RiskCalculator:
             # Calculate portfolio returns
             portfolio_returns = self.calculate_portfolio_returns(historical_data, portfolio)
             
-            if len(portfolio_returns) == 0:
+            if portfolio_returns is None or len(portfolio_returns) == 0:
                 return {
                     'volatility': 0,
                     'sharpe_ratio': 0,
@@ -226,18 +227,19 @@ class RiskCalculator:
             
             # Calculate portfolio beta
             market_data = yf.download("^GSPC", start=historical_data.index[0], end=historical_data.index[-1], progress=False)
-            if not market_data.empty:
+            if market_data is not None and not market_data.empty and 'Close' in market_data.columns:
                 market_returns = market_data['Close'].pct_change().dropna()
                 common_dates = portfolio_returns.index.intersection(market_returns.index)
-                
                 if len(common_dates) > 30:
-                    portfolio_returns_aligned = portfolio_returns[common_dates]
-                    market_returns_aligned = market_returns[common_dates]
-                    
-                    covariance = np.cov(portfolio_returns_aligned, market_returns_aligned)[0, 1]
-                    market_variance = np.var(market_returns_aligned)
-                    
-                    beta = covariance / market_variance if market_variance != 0 else 1.0
+                    portfolio_returns_aligned = portfolio_returns.loc[common_dates]
+                    market_returns_aligned = market_returns.loc[common_dates]
+                    # Ensure both are 1D arrays of the same length
+                    if len(portfolio_returns_aligned) == len(market_returns_aligned):
+                        covariance = np.cov(portfolio_returns_aligned.values, market_returns_aligned.values)[0, 1]
+                        market_variance = np.var(market_returns_aligned.values)
+                        beta = covariance / market_variance if market_variance != 0 else 1.0
+                    else:
+                        beta = 1.0
                 else:
                     beta = 1.0
             else:
@@ -262,7 +264,7 @@ class RiskCalculator:
     def generate_risk_report(self, historical_data, portfolio):
         """Generate a comprehensive risk analysis report"""
         try:
-            if historical_data.empty or portfolio.empty:
+            if historical_data is None or historical_data.empty or portfolio is None or portfolio.empty:
                 return pd.DataFrame()
             
             # Calculate portfolio risk metrics
