@@ -1,0 +1,116 @@
+Build Prompt (Step-by-Step)
+1. Project Objective
+Create a client-ready financial dashboard using Power BI, Tableau, or Python Dash, which:
+
+Integrates with financial data APIs like Yahoo Finance, Alpha Vantage, or Finnhub
+
+Shows interactive analytics around:
+
+Portfolio management (asset allocation, diversification, performance)
+
+Risk metrics (VaR, beta, Sharpe ratio)
+
+Cash flow trends (monthly inflows/outflows, forecasting)
+
+Implements automation for:
+
+Email alerts on key thresholds (e.g., stock dips, volatility spikes)
+
+Scheduled PDF reports of performance summaries
+
+2. User Personas
+Think about different end users and their needs:
+
+Retail investor: Wants daily market summaries, alerts for portfolio loss, simple visualizations
+
+Wealth manager: Needs client reports, risk exposure analysis, portfolio rebalancing tips
+
+Finance team: Needs historical trend data, cash flow predictions, Excel/CSV exports
+
+3. Key Features to Implement
+✅ API Integration
+
+Pull real-time or end-of-day data (stock prices, indices, currency rates, etc.)
+
+Use scheduled jobs (e.g., cron or Python schedule) to refresh data
+
+📊 Dashboard Visuals
+
+Price movement charts (candlestick, line)
+
+Risk-return scatter plots
+
+Asset allocation pie chart
+
+Net cash flow bar graphs
+
+🔁 Automation
+
+Email or SMS alerts (e.g., if portfolio value drops 5%)
+
+Auto-generated reports (daily, weekly, monthly) as PDFs or dashboards
+
+Slack/Teams integration for internal updates
+
+📁 Report Delivery
+
+Save reports in Google Drive/Dropbox
+
+Export to Excel for clients
+
+👩‍💼 Client Customization
+
+Allow user to select:
+
+Tickers to track
+
+Thresholds for alerts
+
+Report frequency and delivery mode
+
+4. Tech Stack Suggestions
+Backend: Python (with yfinance, pandas, schedule, smtplib)
+
+Frontend: Dash (Plotly), Streamlit, or Power BI/Tableau for drag-drop interfaces
+
+Storage: SQLite or CSV for local data caching
+
+Scheduling: cron, apscheduler, or cloud triggers (e.g., AWS Lambda)
+
+Alerting: Twilio, SendGrid, or Zapier-based notifications
+
+5. Sample Use Case
+Client A wants to track a portfolio of 10 stocks. They want:
+
+A dashboard showing ROI, volatility, and diversification
+
+A weekly email report with graphs of performance vs NIFTY/S&P500
+
+A text alert if any stock drops more than 3% in a day
+
+6. Evaluation Metrics (for portfolio/strategy)
+Sharpe Ratio, Beta, Alpha
+
+Value at Risk (VaR)
+
+CAGR, Maximum Drawdown
+
+Cash Flow Coverage Ratios
+
+🧠 Bonus Features (Advanced)
+Use AI/ML to give stock recommendations or predict future volatility
+
+Implement OAuth login so users can save preferences
+
+Connect to brokerage APIs (e.g., Zerodha, Robinhood) for real portfolios
+
+Add news sentiment analysis from RSS or Twitter
+
+✅ Final Delivery Expectations
+A live, interactive dashboard hosted (or in Power BI Desktop/Tableau Public)
+
+GitHub repository with modular, documented code
+
+Sample reports (PDF/Excel) auto-generated
+
+ReadMe file explaining setup, features, and user stories
